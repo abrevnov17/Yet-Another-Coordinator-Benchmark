@@ -12,6 +12,8 @@ var coordinators = []string{
 	"192.168.0.3: 1234",
 }
 
+var sagas = make(map[string]Saga)
+
 var ring = hashring.New(coordinators)
 
 func main() {
@@ -20,10 +22,10 @@ func main() {
 	router := gin.Default()
 
 	router.POST("/saga", processSaga)
-	router.POST("/saga/cluster", newSaga)
+	router.POST("/saga/cluster/:request", newSaga)
 	router.PUT("/saga/partial", partialRequestResponse)
-	router.PUT("/saga/commit/:request", commit)
-	router.DELETE("/saga/cluster", delSaga)
+	router.PUT("/saga/commit/:request/:partial", commit)
+	router.DELETE("/saga/cluster/:request", delSaga)
 
 	if err := router.Run(":8080"); err != nil {
 		panic(err)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/rs/xid"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -14,10 +15,11 @@ func processSaga(c *gin.Context) {
 		log.Fatal("Insufficient Correct Nodes")
 	}
 
-	// if server is not self
+	// TODO: if server is not self
 	c.Redirect(http.StatusTemporaryRedirect, server)
-	// else
-	// TODO: save saga locally
+	// TODO: else
+	reqId := xid.New().String()
+	sagas[reqId] = getSagaFromReq(c.Request)
 
 	// get sub cluster
 	servers, ok := ring.GetNodes(key, subClusterSize)
@@ -29,8 +31,7 @@ func processSaga(c *gin.Context) {
 	requestBody, _ := ioutil.ReadAll(c.Request.Body)
 	ack := make(chan bool)
 	for _,server := range servers {
-		// TODO: add request identifier
-		go sendPostMsg(server + "/saga/cluster", requestBody, ack)
+		go sendPostMsg(server + "/saga/cluster/" + reqId, requestBody, ack)
 	}
 
 	// wait for majority of ack
@@ -44,14 +45,14 @@ func processSaga(c *gin.Context) {
 	// broadcast commit
 	for _,server := range servers {
 		// TODO: add request identifier
-		go sendPutMsg(server + "/saga/commit")
+		go sendPutMsg(server + "/saga/commit/" + reqId)
 	}
 
 	// TODO: execute partial requests
 
 	// if success, reply success
 	for _,server := range servers {
-		go sendDelMsg(server + "/saga/cluster")
+		go sendDelMsg(server + "/saga/cluster/" + reqId)
 	}
 	c.JSON(http.StatusOK, gin.H{})
 
@@ -64,24 +65,33 @@ func processSaga(c *gin.Context) {
 
 func newSaga(c *gin.Context) {
 	// TODO: save saga locally
-
+	reqId := c.Param("request")
+	sagas[reqId] = getSagaFromLeaderReq(c.Request)
 	c.Status(http.StatusOK)
 }
 
 func partialRequestResponse(c *gin.Context) {
 	// TODO: save partial response locally
-
+	reqId := c.Param("request")
+	partial := c.Param("partial")
+	sagas[reqId].PartialReqs[partial] = Request{
+		Method: "",
+		Url:    "",
+		Body:   nil,
+	}
 	c.Status(http.StatusOK)
 }
 
 func commit(c *gin.Context) {
-	partialRequest := c.Param("request")
+	reqId := c.Param("request")
+	partial := c.Param("partial")
 
 	// TODO: flush partial request to disk
+	_ = sagas[reqId].PartialReqs[partial]
 }
 
 func delSaga(c *gin.Context) {
 	// TODO: delete saga locally
-
+	delete(sagas, c.Param("request"))
 	c.Status(http.StatusOK)
 }
