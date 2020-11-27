@@ -15,11 +15,13 @@ func processSaga(c *gin.Context) {
 		log.Fatal("Insufficient Correct Nodes")
 	}
 
-	// TODO: if server is not self
-	c.Redirect(http.StatusTemporaryRedirect, server)
-	// TODO: else
+	if server == ip {
+		c.Redirect(http.StatusTemporaryRedirect, server)
+		return
+	}
+
 	reqId := xid.New().String()
-	sagas[reqId] = getSagaFromReq(c.Request)
+	sagas[reqId] = getSagaFromReq(c.Request, ip)
 
 	// get sub cluster
 	servers, ok := ring.GetNodes(key, subClusterSize)
@@ -44,7 +46,6 @@ func processSaga(c *gin.Context) {
 
 	// broadcast commit
 	for _,server := range servers {
-		// TODO: add request identifier
 		go sendPutMsg(server + "/saga/commit/" + reqId)
 	}
 
@@ -64,16 +65,15 @@ func processSaga(c *gin.Context) {
 }
 
 func newSaga(c *gin.Context) {
-	// TODO: save saga locally
 	reqId := c.Param("request")
-	sagas[reqId] = getSagaFromLeaderReq(c.Request)
+	sagas[reqId] = getSagaFromReq(c.Request, c.Request.RemoteAddr)
 	c.Status(http.StatusOK)
 }
 
 func partialRequestResponse(c *gin.Context) {
-	// TODO: save partial response locally
 	reqId := c.Param("request")
 	partial := c.Param("partial")
+	// TODO: save partial response locally
 	sagas[reqId].PartialReqs[partial] = Request{
 		Method: "",
 		Url:    "",
@@ -85,13 +85,12 @@ func partialRequestResponse(c *gin.Context) {
 func commit(c *gin.Context) {
 	reqId := c.Param("request")
 	partial := c.Param("partial")
-
-	// TODO: flush partial request to disk
-	_ = sagas[reqId].PartialReqs[partial]
+	updateDisk(reqId, partial, sagas[reqId].PartialReqs[partial])
 }
 
 func delSaga(c *gin.Context) {
-	// TODO: delete saga locally
-	delete(sagas, c.Param("request"))
+	reqId := c.Param("request")
+	delete(sagas, reqId)
+	removeFromDisk(reqId)
 	c.Status(http.StatusOK)
 }

@@ -42,7 +42,19 @@ func sendCompensation() {
 }
 
 func checkIfNewLeader() {
-	// TODO: iterate through sagas and if a saga's leader is down
+	coordinatorSet := make(map[string]bool, len(coordinators))
+	for _, c := range coordinators {
+		coordinatorSet[c] = true
+	}
 
-	// TODO: if self is the new leader, send compensation requests
+	for id, s := range sagas {
+		if _, isIn := coordinatorSet[s.Leader]; !isIn {
+			newLeader, _ := ring.GetNode(id)
+			s.Leader = newLeader
+			sagas[id] = s
+			if newLeader == ip {
+				// TODO: send compensation requests
+			}
+		}
+	}
 }

@@ -12,11 +12,17 @@ var coordinators = []string{
 	"192.168.0.3: 1234",
 }
 
-var sagas = make(map[string]Saga)
-
 var ring = hashring.New(coordinators)
 
+var ip = "localhost:8080"
+
 func main() {
+	// TODO: update self IP
+
+	// TODO: update coordinators
+
+	ring = hashring.New(coordinators)
+
 	go updateCoordinatorsList()
 
 	router := gin.Default()

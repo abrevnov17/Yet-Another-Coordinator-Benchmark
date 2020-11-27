@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"io/ioutil"
 	"net/http"
 )
@@ -18,26 +19,25 @@ type Saga struct {
 	Status 		int
 }
 
-func getSagaFromReq(req *http.Request) Saga {
+func getSagaFromReq(req *http.Request, leader string) Saga {
 	defer req.Body.Close()
 
 	body,_ := ioutil.ReadAll(req.Body)
 
 	// TODO: construct Saga
 	return Saga{
-		Leader:      "",
+		Leader:      leader,
 		PartialReqs: body,
 	}
 }
 
-func getSagaFromLeaderReq(req *http.Request) Saga {
-	defer req.Body.Close()
+func (s *Saga)toByteArray() []byte {
+	arr, _ := json.Marshal(s)
+	return arr
+}
 
-	body,_ := ioutil.ReadAll(req.Body)
-
-	// TODO: construct Saga
-	return Saga{
-		Leader:      "",
-		PartialReqs: body,
-	}
+func fromByteArray(arr []byte) *Saga {
+	var s Saga
+	_ = json.Unmarshal(arr, &s)
+	return &s
 }
