@@ -12,7 +12,8 @@ const (
     Initialized Status = iota
     Running
     Failed
-    Aborted
+	Aborted
+	Success
 )
 
 type Request struct {
