@@ -68,7 +68,7 @@ func getSagaFromReq(req *http.Request, leader string) Saga {
 		Leader:      leader,
 		PartialReqs: transaction.PartialReqs,
 		CompReqs: transaction.CompReqs,
-		Status: 1
+		Status: Initialized
 	}
 }
 
