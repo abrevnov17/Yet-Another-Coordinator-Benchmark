@@ -27,25 +27,37 @@ type Saga struct {
 	Leader 		string
 	PartialReqs map[string]Request
 	CompReqs map[string]Request
-	Status 		Status // 1 if being processed, 2 on success, 3 on failure
+	Status 		Status
+}
+
+type TransactionReq struct {
+	PartialReq Request `json:"partial_req"`
+	CompReq Request `json:"comp_req"`
 }
 
 type Transaction struct {
-	PartialReqs map[string]Request `json:"partial_reqs"`
-	CompReqs map[string]Request `json:"comp_reqs"`
+	Tiers map[int]map[string]TransactionReq `json:"tier"`
 }
 
 /*
-This creates a saga from a request. Requests should be of the following format (containing
-two sets of key-value sets, one for partial requests and another for compensating requests):
+This creates a saga from a request. Requests should be of the following format:
 
-{"partial_reqs": 
-	{"some_partial_request_name": 
-		{"method": "GET", "url": "/test/", "body": "test2"}
-	}, 
-"comp_reqs": 
-	{"some_compensating_request_name": 
-		{"method": "POST", "url": "/test2/", "body": "test3"}
+{"tier": 
+	"0": {
+		"<request_name>": {
+			"partial_req": {"method": "POST", "url": "/test2/", "body": "test2"}.
+			"comp_req": {"method": "POST", "url": "/test3/", "body": "test3"}.
+		},
+		"<request_name>": {
+			"partial_req": {"method": "POST", "url": "/test5/", "body": "test5"}.
+			"comp_req": {"method": "POST", "url": "/test5/", "body": "test5"}.
+		}
+	}.
+	"1": {
+		"<request_name>": {
+			"partial_req": {"method": "POST", "url": "/test5/", "body": "test5"}.
+			"comp_req": {"method": "POST", "url": "/test5/", "body": "test5"}.
+		}
 	}
 }
 */
