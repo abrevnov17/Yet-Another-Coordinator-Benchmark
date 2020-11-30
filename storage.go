@@ -1,11 +1,17 @@
 package main
 
-import "github.com/peterbourgon/diskv"
+import (
+	"sync"
 
+	"github.com/peterbourgon/diskv"
+)
+
+var sagasMutex = &sync.Mutex{}
 var sagas = make(map[string]Saga)
+
 var db = diskv.New(diskv.Options{
-	BasePath:	"diskv",
-	CacheSizeMax: 	0,
+	BasePath:     "diskv",
+	CacheSizeMax: 0,
 })
 
 func writeToDisk(key string, value *Saga) {

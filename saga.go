@@ -25,8 +25,7 @@ type Request struct {
 
 type Saga struct {
 	Leader 		string
-	PartialReqs map[string]Request
-	CompReqs map[string]Request
+	Transaction Transaction
 	Status 		Status
 }
 
@@ -42,24 +41,28 @@ type Transaction struct {
 /*
 This creates a saga from a request. Requests should be of the following format:
 
-{"tier": 
-	"0": {
-		"<request_name>": {
-			"partial_req": {"method": "POST", "url": "/test2/", "body": "test2"}.
-			"comp_req": {"method": "POST", "url": "/test3/", "body": "test3"}.
+{
+	"tier": {
+		"0": {
+			"<request_name>": {
+				"partial_req": {"method": "POST", "url": "/test2/", "body": "test2"},
+				"comp_req": {"method": "POST", "url": "/test3/", "body": "test3"}
+			},
+			"<request_name>": {
+				"partial_req": {"method": "POST", "url": "/test5/", "body": "test5"},
+				"comp_req": {"method": "POST", "url": "/test5/", "body": "test5"}
+			}
 		},
-		"<request_name>": {
-			"partial_req": {"method": "POST", "url": "/test5/", "body": "test5"}.
-			"comp_req": {"method": "POST", "url": "/test5/", "body": "test5"}.
+		"1": {
+			"<request_name>": {
+				"partial_req": {"method": "POST", "url": "/test5/", "body": "test5"},
+				"comp_req": {"method": "POST", "url": "/test5/", "body": "test5"}
+			}
 		}
-	}.
-	"1": {
-		"<request_name>": {
-			"partial_req": {"method": "POST", "url": "/test5/", "body": "test5"}.
-			"comp_req": {"method": "POST", "url": "/test5/", "body": "test5"}.
-		}
-	}
+ 	}
 }
+
+For testing, see: https://play.golang.org/p/dsVLkT176mo
 */
 func getSagaFromReq(req *http.Request, leader string) Saga {
 	defer req.Body.Close()
@@ -79,8 +82,7 @@ func getSagaFromReq(req *http.Request, leader string) Saga {
 	// construct Saga
 	return Saga{
 		Leader:      leader,
-		PartialReqs: transaction.PartialReqs,
-		CompReqs: transaction.CompReqs,
+		Transaction: transaction,
 		Status: Initialized
 	}
 }
