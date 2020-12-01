@@ -44,16 +44,11 @@ func processSaga(c *gin.Context) {
 		}
 	}
 
-	// broadcast commit
-	for _,server := range servers {
-		go sendPutMsg(server + "/saga/commit/" + reqId)
-	}
-
 	// TODO: execute partial requests
 
 	// if success, reply success
 	for _,server := range servers {
-		go sendDelMsg(server + "/saga/cluster/" + reqId)
+		go sendDelMsg(server + "/saga/" + reqId)
 	}
 	c.JSON(http.StatusOK, gin.H{})
 
@@ -82,15 +77,8 @@ func partialRequestResponse(c *gin.Context) {
 	c.Status(http.StatusOK)
 }
 
-func commit(c *gin.Context) {
-	reqId := c.Param("request")
-	partial := c.Param("partial")
-	updateDisk(reqId, partial, sagas[reqId].PartialReqs[partial])
-}
-
 func delSaga(c *gin.Context) {
 	reqId := c.Param("request")
 	delete(sagas, reqId)
-	removeFromDisk(reqId)
 	c.Status(http.StatusOK)
 }
