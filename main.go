@@ -16,6 +16,8 @@ var ring = hashring.New(coordinators)
 
 var ip = "localhost:8080"
 
+var sagas = make(map[string]Saga)
+
 func main() {
 	// TODO: update self IP
 
@@ -30,8 +32,7 @@ func main() {
 	router.POST("/saga", processSaga)
 	router.POST("/saga/cluster/:request", newSaga)
 	router.PUT("/saga/partial", partialRequestResponse)
-	router.PUT("/saga/commit/:request/:partial", commit)
-	router.DELETE("/saga/cluster/:request", delSaga)
+	router.DELETE("/saga/:request", delSaga)
 
 	if err := router.Run(":8080"); err != nil {
 		panic(err)
