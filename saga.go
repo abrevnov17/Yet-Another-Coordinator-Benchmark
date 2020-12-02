@@ -3,7 +3,11 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"sync"
 )
+
+var sagas = make(map[string]Saga)
+var sagasMutex = sync.Mutex{}
 
 type Status int
 
@@ -35,6 +39,14 @@ type TransactionReq struct {
 
 type Transaction struct {
 	Tiers map[int]map[string]TransactionReq `json:"tier"`
+}
+
+type PartialResponse struct {
+	SagaId	string
+	Tier	int
+	ReqId 	string
+	IsComp 	bool // true -> compensate req, false -> partial req
+	Status	Status
 }
 
 /*

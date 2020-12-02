@@ -17,7 +17,6 @@ var ring = hashring.New(coordinators)
 
 var ip = "localhost:8080"
 
-var sagas = make(map[string]Saga)
 
 func main() {
 	// TODO: update self IP
