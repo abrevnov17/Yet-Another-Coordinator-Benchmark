@@ -1,9 +1,10 @@
 package main
 
 import (
+	"time"
+
 	"github.com/gin-gonic/gin"
 	"github.com/serialx/hashring"
-	"time"
 )
 
 var coordinators = []string{

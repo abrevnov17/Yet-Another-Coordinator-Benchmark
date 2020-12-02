@@ -2,36 +2,35 @@ package main
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"net/http"
 )
 
 type Status int
 
 const (
-    Initialized Status = iota
-    Running
-    Failed
+	Initialized Status = iota
+	Running
+	Failed
 	Aborted
 	Success
 )
 
 type Request struct {
-	Method 		string `json:"method"`
-	Url 		string `json:"url"`
-	Body 		string `json:"body"`
-	Status 		Status
+	Method string `json:"method"`
+	URL    string `json:"url"`
+	Body   string `json:"body"`
+	Status Status
 }
 
 type Saga struct {
-	Leader 		string
+	Leader      string
 	Transaction Transaction
-	Status 		Status
+	Status      Status
 }
 
 type TransactionReq struct {
 	PartialReq Request `json:"partial_req"`
-	CompReq Request `json:"comp_req"`
+	CompReq    Request `json:"comp_req"`
 }
 
 type Transaction struct {
@@ -64,30 +63,27 @@ This creates a saga from a request. Requests should be of the following format:
 
 For testing, see: https://play.golang.org/p/dsVLkT176mo
 */
-func getSagaFromReq(req *http.Request, leader string) Saga {
+func getSagaFromReq(req *http.Request, leader string) (Saga, error) {
 	defer req.Body.Close()
-
-	body,_ := ioutil.ReadAll(req.Body)
 
 	var transaction Transaction
 
-    // Decoded request body into transaction struct. If there is an error,
-    // respond to the client with the error message and a 400 status code.
-    err := json.NewDecoder(req.Body).Decode(&transaction)
-    if err != nil {
-        http.Error(w, err.Error(), http.StatusBadRequest)
-        return
-    }
+	// Decoded request body into transaction struct. If there is an error,
+	// respond to the client with the error message and a 400 status code.
+	err := json.NewDecoder(req.Body).Decode(&transaction)
+	if err != nil {
+		return Saga{}, err
+	}
 
 	// construct Saga
 	return Saga{
 		Leader:      leader,
 		Transaction: transaction,
-		Status: Initialized
-	}
+		Status:      Initialized,
+	}, nil
 }
 
-func (s *Saga)toByteArray() []byte {
+func (s *Saga) toByteArray() []byte {
 	arr, _ := json.Marshal(s)
 	return arr
 }

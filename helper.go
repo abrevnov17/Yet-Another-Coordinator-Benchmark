@@ -2,9 +2,10 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"sort"
-	"strconv"
 )
 
 func sendPostMsg(url string, body []byte, ack chan bool) {
@@ -16,11 +17,15 @@ func sendPostMsg(url string, body []byte, ack chan bool) {
 	}
 }
 
-func sendMessage(req Request, resp chan bool) err {
-	if (req.Method == "POST") {
-		sendPostMsg(req.Url, []bytes(req.Body), resp)
+func sendMessage(req Request, resp chan bool) error {
+	if req.Method == "POST" {
+		bytes, err := json.Marshal(req.Body)
+		if err != nil {
+			return err
+		}
+		sendPostMsg(req.URL, bytes, resp)
 	} else {
-		return "Unsupported request method"
+		return errors.New("Unsupported request method")
 	}
 
 	return nil
@@ -50,31 +55,29 @@ func sendPartialRequests(saga Saga) (int, bool) {
 	tiersMap := saga.Transaction.Tiers
 
 	// since maps do not guarentee order, we get keys and sort them
-	tiers := make([]string, 0, len(tiersMap))
+	tiers := make([]int, 0, len(tiersMap))
 	for tier := range tiersMap {
-		tiers = append(keys, k)
+		tiers = append(tiers, tier)
 	}
 
-	sort.Strings(tiers)
+	sort.Ints(tiers)
 
 	// loop in order of tier
-	for _, tierStr := range tiers {
-		tier, _ := strconv.Atoi(tierStr)
-
+	for _, tier := range tiers {
 		requestsMap := tiersMap[tier]
 
 		// iterate over requests and asyncronously send partial requests
 		success := make(chan bool)
-		for id, transaction := requestsMap {
-			go sendMessage(transaction.PartialRequest, success)
+		for _, transaction := range requestsMap {
+			go sendMessage(transaction.PartialReq, success)
 		}
 
 		// wait for successes from each partial request, quit on failure
 		// TODO: add retries / timeouts
 		cnt := 0
-		for cnt < len(requestsMap){
-			if <-ack {
-				cnt += 1
+		for cnt < len(requestsMap) {
+			if <-success {
+				cnt++
 			} else {
 				// failure at this tier, need to roll back
 				return tier, true
@@ -86,39 +89,38 @@ func sendPartialRequests(saga Saga) (int, bool) {
 }
 
 // Tier is highest tier through which (inclusive) we need to roll back
-func sendCompensatingRequests(saga Saga, int maxTier) {
+func sendCompensatingRequests(saga Saga, maxTier int) {
 	tiersMap := saga.Transaction.Tiers
 
 	// since maps do not guarentee order, we get keys and sort them
-	tiers := make([]string, 0, len(tiersMap))
+	tiers := make([]int, 0, len(tiersMap))
 	for tier := range tiersMap {
-		tiers = append(keys, k)
+		tiers = append(tiers, tier)
 	}
 
-	sort.Strings(tiers)
+	sort.Ints(tiers)
 
 	// loop in order of tier
-	for _, tierStr := range tiers {
+	for _, tier := range tiers {
 		// we have rolled back all the requests necessary
-		tier, _ := strconv.Atoi(tierStr)
 
-		if (tier >= maxTier) {
-			return;
+		if tier >= maxTier {
+			return
 		}
 		requestsMap := tiersMap[tier]
 
 		// iterate over requests and asyncronously send partial requests
 		success := make(chan bool)
-		for id, transaction := requestsMap {
+		for _, transaction := range requestsMap {
 			go sendMessage(transaction.CompReq, success)
 		}
 
 		// wait for successes from each partial request, quit on failure
 		// TODO: add retries / timeouts
 		cnt := 0
-		for cnt < len(requestsMap){
-			if <-ack {
-				cnt += 1
+		for cnt < len(requestsMap) {
+			if <-success {
+				cnt++
 			}
 		}
 	}
