@@ -1,3 +1,3 @@
 #!/bin/sh
 
-go run main.go saga.go handle_funcs.go helper.go const.go utils.go 
+go run src/main.go src/saga.go src/handle_funcs.go src/helper.go src/const.go src/utils.go 
