@@ -173,6 +173,18 @@ func updateSubCluster(sagaId string, tier int, reqId string, isComp bool, status
 			cnt++
 		}
 	}
+
+	request := sagas[sagaId].Transaction.Tiers[tier][reqId]
+	if isComp {
+		request.CompReq.Status = Success
+		request.PartialReq.Status = Aborted
+	} else {
+		request.PartialReq.Status = Success
+	}
+
+	sagasMutex.Lock()
+	sagas[sagaId].Transaction.Tiers[tier][reqId] = request
+	sagasMutex.Unlock()
 }
 
 func checkIfNewLeader() {
@@ -187,8 +199,29 @@ func checkIfNewLeader() {
 			s.Leader = newLeader
 			sagas[id] = s
 			if newLeader == ip {
-				// TODO: send compensation requests
+				leadCompensation(s.Client, id)
 			}
 		}
+	}
+}
+
+func leadCompensation(key, sagaId string) {
+	subCluster, _ := ring.GetNodes(key, subClusterSize)
+	tiersMap := sagas[sagaId].Transaction.Tiers
+
+	maxTier := -1
+	for n := range tiersMap {
+		if n > maxTier {
+			for reqId := range tiersMap[n]{
+				if tiersMap[n][reqId].PartialReq.Status != Aborted && tiersMap[n][reqId].CompReq.Status != Success {
+					maxTier = n
+					break
+				}
+			}
+		}
+	}
+
+	if maxTier > 0 {
+		sendCompensatingRequests(sagaId, maxTier, subCluster)
 	}
 }

@@ -27,6 +27,7 @@ type Request struct {
 }
 
 type Saga struct {
+	Client 		string
 	Leader      string
 	Transaction Transaction
 	Status      Status
@@ -76,8 +77,6 @@ This creates a saga from a request. Requests should be of the following format:
 For testing, see: https://play.golang.org/p/dsVLkT176mo
 */
 func getSagaFromReq(req *http.Request, leader string) (Saga, error) {
-	defer req.Body.Close()
-
 	var transaction Transaction
 
 	// Decoded request body into transaction struct. If there is an error,
@@ -89,9 +88,10 @@ func getSagaFromReq(req *http.Request, leader string) (Saga, error) {
 
 	// construct Saga
 	return Saga{
-		Leader:      leader,
-		Transaction: transaction,
-		Status:      Initialized,
+		Client:			req.RemoteAddr,
+		Leader:      	leader,
+		Transaction: 	transaction,
+		Status:      	Initialized,
 	}, nil
 }
 
@@ -100,8 +100,8 @@ func (s *Saga) toByteArray() []byte {
 	return arr
 }
 
-func fromByteArray(arr []byte) *Saga {
+func fromByteArray(arr []byte) Saga {
 	var s Saga
 	_ = json.Unmarshal(arr, &s)
-	return &s
+	return s
 }

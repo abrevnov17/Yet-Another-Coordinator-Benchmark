@@ -40,10 +40,9 @@ func processSaga(c *gin.Context) {
 	}
 
 	// send request to sub cluster
-	requestBody, _ := ioutil.ReadAll(c.Request.Body)
 	ack := make(chan MsgStatus)
 	for _, server := range servers {
-		go sendPostMsg(server+"/saga/cluster/"+reqID, "", requestBody, ack)
+		go sendPostMsg(server+"/saga/cluster/"+reqID, "", saga.toByteArray(), ack)
 	}
 
 	// wait for majority of ack
@@ -81,13 +80,14 @@ func processSaga(c *gin.Context) {
 
 func newSaga(c *gin.Context) {
 	reqID := c.Param("request")
-	sag, err := getSagaFromReq(c.Request, c.Request.RemoteAddr)
 
-	if err != nil {
-		c.Status(http.StatusBadRequest)
-		return
-	}
-	sagas[reqID] = sag
+	defer c.Request.Body.Close()
+	body, _ := ioutil.ReadAll(c.Request.Body)
+	saga := fromByteArray(body)
+
+	sagasMutex.Lock()
+	sagas[reqID] = saga
+	sagasMutex.Unlock()
 
 	c.Status(http.StatusOK)
 }
@@ -103,14 +103,19 @@ func partialRequestResponse(c *gin.Context) {
 		return
 	}
 
-	sagasMutex.Lock()
-	targetPartialRequest = sagas[resp.SagaId].Transaction.Tiers[resp.Tier][resp.ReqId]
+	saga := sagas[resp.SagaId]
+	saga.Leader = c.Request.RemoteAddr
+
+	targetPartialRequest = saga.Transaction.Tiers[resp.Tier][resp.ReqId]
 	if resp.IsComp {
 		targetPartialRequest.CompReq.Status = resp.Status
 	} else {
 		targetPartialRequest.PartialReq.Status = resp.Status
 	}
-	sagas[resp.SagaId].Transaction.Tiers[resp.Tier][resp.ReqId] = targetPartialRequest
+	saga.Transaction.Tiers[resp.Tier][resp.ReqId] = targetPartialRequest
+
+	sagasMutex.Lock()
+	sagas[resp.SagaId] = saga
 	sagasMutex.Unlock()
 
 	c.Status(http.StatusOK)
