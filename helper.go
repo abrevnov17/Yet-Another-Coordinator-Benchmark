@@ -3,58 +3,79 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"sort"
 )
 
-func sendPostMsg(url string, body []byte, ack chan bool) {
+type MsgStatus struct {
+	ok 		bool
+	reqId 	string
+}
+
+func sendPostMsg(url, reqId string, body []byte, ack chan MsgStatus) {
 	resp, err := http.Post("http://"+url, "application/json", bytes.NewBuffer(body))
-	if err == nil && resp.StatusCode >= 200 && resp.StatusCode <= 299 {
-		ack <- true
-	} else {
-		ack <- false
-	}
+	ok := err == nil && resp.StatusCode >= 200 && resp.StatusCode <= 299
+	ack <- MsgStatus{ok: ok, reqId: reqId}
 }
 
-func sendMessage(req Request, resp chan bool) error {
-	if req.Method == "POST" {
-		bytes, err := json.Marshal(req.Body)
-		if err != nil {
-			return err
-		}
-		sendPostMsg(req.URL, bytes, resp)
-	} else {
-		return errors.New("Unsupported request method")
-	}
-
-	return nil
+func sendGetMsg(url, reqId string, ack chan MsgStatus) {
+	resp, err := http.Get("http://"+url)
+	ok := err == nil && resp.StatusCode >= 200 && resp.StatusCode <= 299
+	ack <- MsgStatus{ok: ok, reqId: reqId}
 }
 
-func sendPutMsg(url string) {
+func sendPutMsg(url, reqId string, body []byte, ack chan MsgStatus) {
 	client := &http.Client{}
-
-	req, _ := http.NewRequest("PUT", "http://"+url, nil)
-
-	_, _ = client.Do(req)
-}
-
-func sendDelMsg(url string) {
-	client := &http.Client{}
-
-	req, _ := http.NewRequest("DELETE", "http://"+url, nil)
+	req, err := http.NewRequest("PUT", "http://"+url, bytes.NewBuffer(body))
+	if err != nil {
+		ack <- MsgStatus{ok: false, reqId: reqId}
+		return
+	}
 
 	resp, err := client.Do(req)
-	for err != nil || resp.StatusCode < 200 || resp.StatusCode > 299 {
-		resp, err = client.Do(req)
+	ok := err == nil && resp.StatusCode >= 200 && resp.StatusCode <= 299
+	ack <- MsgStatus{ok: ok, reqId: reqId}
+}
+
+func sendDelMsg(url, reqId string, ack chan MsgStatus) {
+	client := &http.Client{}
+	req, err := http.NewRequest("DELETE", "http://"+url, nil)
+	if err != nil {
+		ack <- MsgStatus{ok: false, reqId: reqId}
+		return
+	}
+	resp, err := client.Do(req)
+	ok := err == nil && resp.StatusCode >= 200 && resp.StatusCode <= 299
+	ack <- MsgStatus{ok: ok, reqId: reqId}
+}
+
+func sendMessage(reqId string, req Request, resp chan MsgStatus) {
+	if req.Method == "POST" {
+		body, err := json.Marshal(req.Body)
+		if err != nil {
+			resp <- MsgStatus{ok: false, reqId: reqId}
+		}
+		sendPostMsg(req.URL, reqId, body, resp)
+	} else if req.Method == "GET" {
+		sendGetMsg(req.URL, reqId, resp)
+	} else if req.Method == "PUT" {
+		body, err := json.Marshal(req.Body)
+		if err != nil {
+			resp <- MsgStatus{ok: false, reqId: reqId}
+		}
+		sendPutMsg(req.URL, reqId, body, resp)
+	} else if req.Method == "DELETE" {
+		sendDelMsg(req.URL, reqId, resp)
+	} else {
+		resp <- MsgStatus{ok: false, reqId: reqId}
 	}
 }
 
 // Returns tier that needs to be rolled back to, nil on success
-func sendPartialRequests(saga Saga) (int, bool) {
-	tiersMap := saga.Transaction.Tiers
+func sendPartialRequests(sagaId string, subCluster []string) (int, bool) {
+	tiersMap := sagas[sagaId].Transaction.Tiers
 
-	// since maps do not guarentee order, we get keys and sort them
+	// since maps do not guarantee order, we get keys and sort them
 	tiers := make([]int, 0, len(tiersMap))
 	for tier := range tiersMap {
 		tiers = append(tiers, tier)
@@ -66,20 +87,23 @@ func sendPartialRequests(saga Saga) (int, bool) {
 	for _, tier := range tiers {
 		requestsMap := tiersMap[tier]
 
-		// iterate over requests and asyncronously send partial requests
-		success := make(chan bool)
-		for _, transaction := range requestsMap {
-			go sendMessage(transaction.PartialReq, success)
+		// iterate over requests and asynchronously send partial requests
+		success := make(chan MsgStatus)
+		for reqId, transaction := range requestsMap {
+			go sendMessage(reqId, transaction.PartialReq, success)
 		}
 
 		// wait for successes from each partial request, quit on failure
 		// TODO: add retries / timeouts
 		cnt := 0
 		for cnt < len(requestsMap) {
-			if <-success {
+			status := <- success
+			if status.ok {
+				updateSubCluster(sagaId, tier, status.reqId, false, Success, subCluster)
 				cnt++
 			} else {
 				// failure at this tier, need to roll back
+				updateSubCluster(sagaId, tier, status.reqId, false, Failed, subCluster)
 				return tier, true
 			}
 		}
@@ -89,10 +113,10 @@ func sendPartialRequests(saga Saga) (int, bool) {
 }
 
 // Tier is highest tier through which (inclusive) we need to roll back
-func sendCompensatingRequests(saga Saga, maxTier int) {
-	tiersMap := saga.Transaction.Tiers
+func sendCompensatingRequests(sagaId string, maxTier int, subCluster []string) {
+	tiersMap := sagas[sagaId].Transaction.Tiers
 
-	// since maps do not guarentee order, we get keys and sort them
+	// since maps do not guarantee order, we get keys and sort them
 	tiers := make([]int, 0, len(tiersMap))
 	for tier := range tiersMap {
 		tiers = append(tiers, tier)
@@ -109,19 +133,44 @@ func sendCompensatingRequests(saga Saga, maxTier int) {
 		}
 		requestsMap := tiersMap[tier]
 
-		// iterate over requests and asyncronously send partial requests
-		success := make(chan bool)
-		for _, transaction := range requestsMap {
-			go sendMessage(transaction.CompReq, success)
+		// iterate over requests and asynchronously send partial requests
+		success := make(chan MsgStatus)
+		for reqId, transaction := range requestsMap {
+			go sendMessage(reqId, transaction.CompReq, success)
 		}
 
 		// wait for successes from each partial request, quit on failure
 		// TODO: add retries / timeouts
 		cnt := 0
 		for cnt < len(requestsMap) {
-			if <-success {
+			status := <- success
+			if status.ok {
+				updateSubCluster(sagaId, tier, status.reqId, true, Success, subCluster)
 				cnt++
 			}
+			// TODO: handle unsuccessful compensation
+		}
+	}
+}
+
+func updateSubCluster(sagaId string, tier int, reqId string, isComp bool, status Status, subCluster []string) {
+	body,_ := json.Marshal(PartialResponse{
+		SagaId: sagaId,
+		Tier:   tier,
+		ReqId:  reqId,
+		IsComp: isComp,
+		Status: status,
+	})
+
+	ack := make(chan MsgStatus)
+	for _, server := range subCluster {
+		go sendPutMsg(server + "/saga/partial", "", body, ack)
+	}
+
+	cnt := 0
+	for cnt < len(subCluster)/2+1 {
+		if (<-ack).ok {
+			cnt++
 		}
 	}
 }
