@@ -55,10 +55,10 @@ func processSaga(c *gin.Context) {
 		go sendPutMsg(server + "/saga/commit/" + reqId)
 	}
 
-	// TODO: execute partial requests
-	rollbackTier := sendPartialRequests(saga)
+	// execute partial requests
+	rollbackTier, rollback := sendPartialRequests(saga)
 
-	if rollbackTier != nil {
+	if rollback == true {
 		// experiences failure, need to send compensating requests up to tier (inclusive)
 		sendCompensatingRequests(saga, rollbackTier)
 		c.JSON(http.StatusBadRequest, gin.H{})

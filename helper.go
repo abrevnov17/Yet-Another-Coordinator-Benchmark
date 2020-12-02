@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net/http"
 	"sort"
+	"strconv"
 )
 
 func sendPostMsg(url string, body []byte, ack chan bool) {
@@ -15,31 +16,9 @@ func sendPostMsg(url string, body []byte, ack chan bool) {
 	}
 }
 
-func sendGetMsg(url string, body []byte, ack chan bool) {
-	resp, err := http.Get("http://"+url, "application/json", bytes.NewBuffer(body))
-	if err == nil && resp.StatusCode >= 200 && resp.StatusCode <= 299 {
-		ack <- true
-	} else {
-		ack <- false
-	}
-}
-
-func sendDeleteMsg(url string, body []byte, ack chan bool) {
-	resp, err := http.Delete("http://"+url, "application/json", bytes.NewBuffer(body))
-	if err == nil && resp.StatusCode >= 200 && resp.StatusCode <= 299 {
-		ack <- true
-	} else {
-		ack <- false
-	}
-}
-
 func sendMessage(req Request, resp chan bool) err {
 	if (req.Method == "POST") {
 		sendPostMsg(req.Url, []bytes(req.Body), resp)
-	} else if (req.Method == "GET") {
-		sendGetMsg(req.Url, []bytes(req.Body), resp)
-	} else if (req.Method == "DELETE") {
-		sendDeleteMsg(req.Url, []bytes(req.Body), resp)
 	} else {
 		return "Unsupported request method"
 	}
@@ -67,7 +46,7 @@ func sendDelMsg(url string) {
 }
 
 // Returns tier that needs to be rolled back to, nil on success
-func sendPartialRequests(saga Saga) {
+func sendPartialRequests(saga Saga) (int, bool) {
 	tiersMap := saga.Transaction.Tiers
 
 	// since maps do not guarentee order, we get keys and sort them
@@ -79,7 +58,9 @@ func sendPartialRequests(saga Saga) {
 	sort.Strings(tiers)
 
 	// loop in order of tier
-	for _, tier := range tiers {
+	for _, tierStr := range tiers {
+		tier, _ := strconv.Atoi(tierStr)
+
 		requestsMap := tiersMap[tier]
 
 		// iterate over requests and asyncronously send partial requests
@@ -96,12 +77,12 @@ func sendPartialRequests(saga Saga) {
 				cnt += 1
 			} else {
 				// failure at this tier, need to roll back
-				return tier
+				return tier, true
 			}
 		}
 	}
 
-	return nil
+	return -1, false
 }
 
 // Tier is highest tier through which (inclusive) we need to roll back
@@ -117,8 +98,10 @@ func sendCompensatingRequests(saga Saga, int maxTier) {
 	sort.Strings(tiers)
 
 	// loop in order of tier
-	for _, tier := range tiers {
+	for _, tierStr := range tiers {
 		// we have rolled back all the requests necessary
+		tier, _ := strconv.Atoi(tierStr)
+
 		if (tier >= maxTier) {
 			return;
 		}
