@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"net/http"
+	"sort"
+	"strconv"
 )
 
 func sendPostMsg(url string, body []byte, ack chan bool) {
-	resp, err := http.Post("http://" + url, "application/json", bytes.NewBuffer(body))
+	resp, err := http.Post("http://"+url, "application/json", bytes.NewBuffer(body))
 	if err == nil && resp.StatusCode >= 200 && resp.StatusCode <= 299 {
 		ack <- true
 	} else {
@@ -14,10 +16,20 @@ func sendPostMsg(url string, body []byte, ack chan bool) {
 	}
 }
 
+func sendMessage(req Request, resp chan bool) err {
+	if (req.Method == "POST") {
+		sendPostMsg(req.Url, []bytes(req.Body), resp)
+	} else {
+		return "Unsupported request method"
+	}
+
+	return nil
+}
+
 func sendPutMsg(url string) {
 	client := &http.Client{}
 
-	req, _ := http.NewRequest("PUT", "http://" + url, nil)
+	req, _ := http.NewRequest("PUT", "http://"+url, nil)
 
 	_, _ = client.Do(req)
 }
@@ -25,7 +37,7 @@ func sendPutMsg(url string) {
 func sendDelMsg(url string) {
 	client := &http.Client{}
 
-	req, _ := http.NewRequest("DELETE", "http://" + url, nil)
+	req, _ := http.NewRequest("DELETE", "http://"+url, nil)
 
 	resp, err := client.Do(req)
 	for err != nil || resp.StatusCode < 200 || resp.StatusCode > 299 {
@@ -33,12 +45,83 @@ func sendDelMsg(url string) {
 	}
 }
 
-func sendPartialRequests(){
-	// TODO: define partial requests format
+// Returns tier that needs to be rolled back to, nil on success
+func sendPartialRequests(saga Saga) (int, bool) {
+	tiersMap := saga.Transaction.Tiers
+
+	// since maps do not guarentee order, we get keys and sort them
+	tiers := make([]string, 0, len(tiersMap))
+	for tier := range tiersMap {
+		tiers = append(keys, k)
+	}
+
+	sort.Strings(tiers)
+
+	// loop in order of tier
+	for _, tierStr := range tiers {
+		tier, _ := strconv.Atoi(tierStr)
+
+		requestsMap := tiersMap[tier]
+
+		// iterate over requests and asyncronously send partial requests
+		success := make(chan bool)
+		for id, transaction := requestsMap {
+			go sendMessage(transaction.PartialRequest, success)
+		}
+
+		// wait for successes from each partial request, quit on failure
+		// TODO: add retries / timeouts
+		cnt := 0
+		for cnt < len(requestsMap){
+			if <-ack {
+				cnt += 1
+			} else {
+				// failure at this tier, need to roll back
+				return tier, true
+			}
+		}
+	}
+
+	return -1, false
 }
 
-func sendCompensation() {
-	// TODO: send compensation requests
+// Tier is highest tier through which (inclusive) we need to roll back
+func sendCompensatingRequests(saga Saga, int maxTier) {
+	tiersMap := saga.Transaction.Tiers
+
+	// since maps do not guarentee order, we get keys and sort them
+	tiers := make([]string, 0, len(tiersMap))
+	for tier := range tiersMap {
+		tiers = append(keys, k)
+	}
+
+	sort.Strings(tiers)
+
+	// loop in order of tier
+	for _, tierStr := range tiers {
+		// we have rolled back all the requests necessary
+		tier, _ := strconv.Atoi(tierStr)
+
+		if (tier >= maxTier) {
+			return;
+		}
+		requestsMap := tiersMap[tier]
+
+		// iterate over requests and asyncronously send partial requests
+		success := make(chan bool)
+		for id, transaction := requestsMap {
+			go sendMessage(transaction.CompReq, success)
+		}
+
+		// wait for successes from each partial request, quit on failure
+		// TODO: add retries / timeouts
+		cnt := 0
+		for cnt < len(requestsMap){
+			if <-ack {
+				cnt += 1
+			}
+		}
+	}
 }
 
 func checkIfNewLeader() {

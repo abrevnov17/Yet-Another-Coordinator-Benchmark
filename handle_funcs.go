@@ -1,11 +1,12 @@
 package main
 
 import (
-	"github.com/gin-gonic/gin"
-	"github.com/rs/xid"
 	"io/ioutil"
 	"log"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
+	"github.com/rs/xid"
 )
 
 func processSaga(c *gin.Context) {
@@ -15,13 +16,18 @@ func processSaga(c *gin.Context) {
 		log.Fatal("Insufficient Correct Nodes")
 	}
 
-	if server == ip {
+	if server != ip {
 		c.Redirect(http.StatusTemporaryRedirect, server)
 		return
 	}
 
 	reqId := xid.New().String()
-	sagas[reqId] = getSagaFromReq(c.Request, ip)
+
+	saga := getSagaFromReq(c.Request, ip)
+
+	sagasMutex.Lock()
+	sagas[reqId] = saga
+	sagasMutex.Unlock()
 
 	// get sub cluster
 	servers, ok := ring.GetNodes(key, subClusterSize)
@@ -32,31 +38,37 @@ func processSaga(c *gin.Context) {
 	// send request to sub cluster
 	requestBody, _ := ioutil.ReadAll(c.Request.Body)
 	ack := make(chan bool)
-	for _,server := range servers {
-		go sendPostMsg(server + "/saga/cluster/" + reqId, requestBody, ack)
+	for _, server := range servers {
+		go sendPostMsg(server+"/saga/cluster/"+reqId, requestBody, ack)
 	}
 
 	// wait for majority of ack
 	cnt := 0
-	for cnt < len(coordinators) / 2 + 1 {
+	for cnt < len(coordinators)/2+1 {
 		if <-ack {
 			cnt += 1
 		}
 	}
 
-	// TODO: execute partial requests
-
-	// if success, reply success
-	for _,server := range servers {
-		go sendDelMsg(server + "/saga/" + reqId)
+	// broadcast commit
+	for _, server := range servers {
+		go sendPutMsg(server + "/saga/commit/" + reqId)
 	}
-	c.JSON(http.StatusOK, gin.H{})
 
-	// else
-	// TODO: send compensation requests to all partial requests
+	// execute partial requests
+	rollbackTier, rollback := sendPartialRequests(saga)
 
-	c.JSON(http.StatusBadRequest, gin.H{})
-
+	if rollback == true {
+		// experiences failure, need to send compensating requests up to tier (inclusive)
+		sendCompensatingRequests(saga, rollbackTier)
+		c.JSON(http.StatusBadRequest, gin.H{})
+	} else {
+		// reply success
+		for _, server := range servers {
+			go sendDelMsg(server + "/saga/cluster/" + reqId)
+		}
+		c.JSON(http.StatusOK, gin.H{})
+	}
 }
 
 func newSaga(c *gin.Context) {
