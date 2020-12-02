@@ -21,13 +21,16 @@ func processSaga(c *gin.Context) {
 		return
 	}
 
-	reqId := xid.New().String()
+	reqID := xid.New().String()
 
-	saga := getSagaFromReq(c.Request, ip)
+	saga, err := getSagaFromReq(c.Request, ip)
 
-	sagasMutex.Lock()
-	sagas[reqId] = saga
-	sagasMutex.Unlock()
+	if err != nil {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+
+	sagas[reqID] = saga
 
 	// get sub cluster
 	servers, ok := ring.GetNodes(key, subClusterSize)
@@ -39,49 +42,56 @@ func processSaga(c *gin.Context) {
 	requestBody, _ := ioutil.ReadAll(c.Request.Body)
 	ack := make(chan bool)
 	for _, server := range servers {
-		go sendPostMsg(server+"/saga/cluster/"+reqId, requestBody, ack)
+		go sendPostMsg(server+"/saga/cluster/"+reqID, requestBody, ack)
 	}
 
 	// wait for majority of ack
 	cnt := 0
 	for cnt < len(coordinators)/2+1 {
 		if <-ack {
-			cnt += 1
+			cnt++
 		}
 	}
 
 	// broadcast commit
 	for _, server := range servers {
-		go sendPutMsg(server + "/saga/commit/" + reqId)
+		go sendPutMsg(server + "/saga/commit/" + reqID)
 	}
 
-	// TODO: execute partial requests
-	rollbackTier := sendPartialRequests(saga)
+	// execute partial requests
+	rollbackTier, rollback := sendPartialRequests(saga)
 
-	if rollbackTier != nil {
+	if rollback == true {
 		// experiences failure, need to send compensating requests up to tier (inclusive)
 		sendCompensatingRequests(saga, rollbackTier)
 		c.JSON(http.StatusBadRequest, gin.H{})
 	} else {
 		// reply success
 		for _, server := range servers {
-			go sendDelMsg(server + "/saga/cluster/" + reqId)
+			go sendDelMsg(server + "/saga/cluster/" + reqID)
 		}
 		c.JSON(http.StatusOK, gin.H{})
 	}
 }
 
 func newSaga(c *gin.Context) {
-	reqId := c.Param("request")
-	sagas[reqId] = getSagaFromReq(c.Request, c.Request.RemoteAddr)
+	reqID := c.Param("request")
+	sag, err := getSagaFromReq(c.Request, c.Request.RemoteAddr)
+
+	if err != nil {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+	sagas[reqID] = sag
+
 	c.Status(http.StatusOK)
 }
 
 func partialRequestResponse(c *gin.Context) {
-	reqId := c.Param("request")
+	reqID := c.Param("request")
 	partial := c.Param("partial")
 	// TODO: save partial response locally
-	sagas[reqId].PartialReqs[partial] = Request{
+	sagas[reqID].PartialReqs[partial] = Request{
 		Method: "",
 		Url:    "",
 		Body:   nil,
@@ -89,15 +99,8 @@ func partialRequestResponse(c *gin.Context) {
 	c.Status(http.StatusOK)
 }
 
-func commit(c *gin.Context) {
-	reqId := c.Param("request")
-	partial := c.Param("partial")
-	updateDisk(reqId, partial, sagas[reqId].PartialReqs[partial])
-}
-
 func delSaga(c *gin.Context) {
-	reqId := c.Param("request")
-	delete(sagas, reqId)
-	removeFromDisk(reqId)
+	reqID := c.Param("request")
+	delete(sagas, reqID)
 	c.Status(http.StatusOK)
 }
