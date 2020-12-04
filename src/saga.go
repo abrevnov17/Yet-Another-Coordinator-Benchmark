@@ -27,7 +27,7 @@ type Request struct {
 }
 
 type Saga struct {
-	Client 		string
+	Client      string
 	Leader      string
 	Transaction Transaction
 	Status      Status
@@ -43,11 +43,11 @@ type Transaction struct {
 }
 
 type PartialResponse struct {
-	SagaId	string
-	Tier	int
-	ReqId 	string
-	IsComp 	bool // true -> compensate req, false -> partial req
-	Status	Status
+	SagaId string
+	Tier   int
+	ReqID  string
+	IsComp bool // true -> compensate req, false -> partial req
+	Status Status
 }
 
 /*
@@ -88,10 +88,10 @@ func getSagaFromReq(req *http.Request, leader string) (Saga, error) {
 
 	// construct Saga
 	return Saga{
-		Client:			req.RemoteAddr,
-		Leader:      	leader,
-		Transaction: 	transaction,
-		Status:      	Initialized,
+		Client:      req.RemoteAddr,
+		Leader:      leader,
+		Transaction: transaction,
+		Status:      Initialized,
 	}, nil
 }
 

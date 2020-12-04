@@ -8,66 +8,66 @@ import (
 )
 
 type MsgStatus struct {
-	ok 		bool
-	reqId 	string
+	ok    bool
+	reqID string
 }
 
-func sendPostMsg(url, reqId string, body []byte, ack chan MsgStatus) {
+func sendPostMsg(url, reqID string, body []byte, ack chan MsgStatus) {
 	resp, err := http.Post("http://"+url, "application/json", bytes.NewBuffer(body))
 	ok := err == nil && resp.StatusCode >= 200 && resp.StatusCode <= 299
-	ack <- MsgStatus{ok: ok, reqId: reqId}
+	ack <- MsgStatus{ok: ok, reqID: reqID}
 }
 
-func sendGetMsg(url, reqId string, ack chan MsgStatus) {
-	resp, err := http.Get("http://"+url)
+func sendGetMsg(url, reqID string, ack chan MsgStatus) {
+	resp, err := http.Get("http://" + url)
 	ok := err == nil && resp.StatusCode >= 200 && resp.StatusCode <= 299
-	ack <- MsgStatus{ok: ok, reqId: reqId}
+	ack <- MsgStatus{ok: ok, reqID: reqID}
 }
 
-func sendPutMsg(url, reqId string, body []byte, ack chan MsgStatus) {
+func sendPutMsg(url, reqID string, body []byte, ack chan MsgStatus) {
 	client := &http.Client{}
 	req, err := http.NewRequest("PUT", "http://"+url, bytes.NewBuffer(body))
 	if err != nil {
-		ack <- MsgStatus{ok: false, reqId: reqId}
+		ack <- MsgStatus{ok: false, reqID: reqID}
 		return
 	}
 
 	resp, err := client.Do(req)
 	ok := err == nil && resp.StatusCode >= 200 && resp.StatusCode <= 299
-	ack <- MsgStatus{ok: ok, reqId: reqId}
+	ack <- MsgStatus{ok: ok, reqID: reqID}
 }
 
-func sendDelMsg(url, reqId string, ack chan MsgStatus) {
+func sendDelMsg(url, reqID string, ack chan MsgStatus) {
 	client := &http.Client{}
 	req, err := http.NewRequest("DELETE", "http://"+url, nil)
 	if err != nil {
-		ack <- MsgStatus{ok: false, reqId: reqId}
+		ack <- MsgStatus{ok: false, reqID: reqID}
 		return
 	}
 	resp, err := client.Do(req)
 	ok := err == nil && resp.StatusCode >= 200 && resp.StatusCode <= 299
-	ack <- MsgStatus{ok: ok, reqId: reqId}
+	ack <- MsgStatus{ok: ok, reqID: reqID}
 }
 
-func sendMessage(reqId string, req Request, resp chan MsgStatus) {
+func sendMessage(reqID string, req Request, resp chan MsgStatus) {
 	if req.Method == "POST" {
 		body, err := json.Marshal(req.Body)
 		if err != nil {
-			resp <- MsgStatus{ok: false, reqId: reqId}
+			resp <- MsgStatus{ok: false, reqID: reqID}
 		}
-		sendPostMsg(req.URL, reqId, body, resp)
+		sendPostMsg(req.URL, reqID, body, resp)
 	} else if req.Method == "GET" {
-		sendGetMsg(req.URL, reqId, resp)
+		sendGetMsg(req.URL, reqID, resp)
 	} else if req.Method == "PUT" {
 		body, err := json.Marshal(req.Body)
 		if err != nil {
-			resp <- MsgStatus{ok: false, reqId: reqId}
+			resp <- MsgStatus{ok: false, reqID: reqID}
 		}
-		sendPutMsg(req.URL, reqId, body, resp)
+		sendPutMsg(req.URL, reqID, body, resp)
 	} else if req.Method == "DELETE" {
-		sendDelMsg(req.URL, reqId, resp)
+		sendDelMsg(req.URL, reqID, resp)
 	} else {
-		resp <- MsgStatus{ok: false, reqId: reqId}
+		resp <- MsgStatus{ok: false, reqID: reqID}
 	}
 }
 
@@ -89,21 +89,21 @@ func sendPartialRequests(sagaId string, subCluster []string) (int, bool) {
 
 		// iterate over requests and asynchronously send partial requests
 		success := make(chan MsgStatus)
-		for reqId, transaction := range requestsMap {
-			go sendMessage(reqId, transaction.PartialReq, success)
+		for reqID, transaction := range requestsMap {
+			go sendMessage(reqID, transaction.PartialReq, success)
 		}
 
 		// wait for successes from each partial request, quit on failure
 		// TODO: add retries / timeouts
 		cnt := 0
 		for cnt < len(requestsMap) {
-			status := <- success
+			status := <-success
 			if status.ok {
-				updateSubCluster(sagaId, tier, status.reqId, false, Success, subCluster)
+				updateSubCluster(sagaId, tier, status.reqID, false, Success, subCluster)
 				cnt++
 			} else {
 				// failure at this tier, need to roll back
-				updateSubCluster(sagaId, tier, status.reqId, false, Failed, subCluster)
+				updateSubCluster(sagaId, tier, status.reqID, false, Failed, subCluster)
 				return tier, true
 			}
 		}
@@ -135,17 +135,17 @@ func sendCompensatingRequests(sagaId string, maxTier int, subCluster []string) {
 
 		// iterate over requests and asynchronously send partial requests
 		success := make(chan MsgStatus)
-		for reqId, transaction := range requestsMap {
-			go sendMessage(reqId, transaction.CompReq, success)
+		for reqID, transaction := range requestsMap {
+			go sendMessage(reqID, transaction.CompReq, success)
 		}
 
 		// wait for successes from each partial request, quit on failure
 		// TODO: add retries / timeouts
 		cnt := 0
 		for cnt < len(requestsMap) {
-			status := <- success
+			status := <-success
 			if status.ok {
-				updateSubCluster(sagaId, tier, status.reqId, true, Success, subCluster)
+				updateSubCluster(sagaId, tier, status.reqID, true, Success, subCluster)
 				cnt++
 			}
 			// TODO: handle unsuccessful compensation
@@ -153,18 +153,18 @@ func sendCompensatingRequests(sagaId string, maxTier int, subCluster []string) {
 	}
 }
 
-func updateSubCluster(sagaId string, tier int, reqId string, isComp bool, status Status, subCluster []string) {
-	body,_ := json.Marshal(PartialResponse{
+func updateSubCluster(sagaId string, tier int, reqID string, isComp bool, status Status, subCluster []string) {
+	body, _ := json.Marshal(PartialResponse{
 		SagaId: sagaId,
 		Tier:   tier,
-		ReqId:  reqId,
+		ReqID:  reqID,
 		IsComp: isComp,
 		Status: status,
 	})
 
 	ack := make(chan MsgStatus)
 	for _, server := range subCluster {
-		go sendPutMsg(server + "/saga/partial", "", body, ack)
+		go sendPutMsg(server+"/saga/partial", "", body, ack)
 	}
 
 	cnt := 0
@@ -174,7 +174,7 @@ func updateSubCluster(sagaId string, tier int, reqId string, isComp bool, status
 		}
 	}
 
-	request := sagas[sagaId].Transaction.Tiers[tier][reqId]
+	request := sagas[sagaId].Transaction.Tiers[tier][reqID]
 	if isComp {
 		request.CompReq.Status = Success
 		request.PartialReq.Status = Aborted
@@ -183,7 +183,7 @@ func updateSubCluster(sagaId string, tier int, reqId string, isComp bool, status
 	}
 
 	sagasMutex.Lock()
-	sagas[sagaId].Transaction.Tiers[tier][reqId] = request
+	sagas[sagaId].Transaction.Tiers[tier][reqID] = request
 	sagasMutex.Unlock()
 }
 
@@ -212,8 +212,8 @@ func leadCompensation(key, sagaId string) {
 	maxTier := -1
 	for n := range tiersMap {
 		if n > maxTier {
-			for reqId := range tiersMap[n]{
-				if tiersMap[n][reqId].PartialReq.Status != Aborted && tiersMap[n][reqId].CompReq.Status != Success {
+			for reqID := range tiersMap[n] {
+				if tiersMap[n][reqID].PartialReq.Status != Aborted && tiersMap[n][reqID].CompReq.Status != Success {
 					maxTier = n
 					break
 				}

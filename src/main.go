@@ -1,8 +1,8 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -12,11 +12,7 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-var coordinators = []string{
-	"localhost: 8080",
-	"192.168.0.2: 8000",
-	"192.168.0.3: 1234",
-}
+var coordinators = []string{}
 
 var ring = hashring.New(coordinators)
 
@@ -25,6 +21,12 @@ var ip = "localhost:8080"
 var clientset *kubernetes.Clientset
 
 func main() {
+	fmt.Println("starting up coordinator...")
+
+	ip = "http://" + os.Getenv("POD_IP") + ":8080"
+
+	fmt.Println("pod ip: " + ip)
+
 	// creating k8s client
 	config, err := rest.InClusterConfig()
 	if err != nil {
@@ -36,15 +38,11 @@ func main() {
 		panic(err.Error())
 	}
 
-	// TODO: update self IP
-
-	// TODO: update coordinators
-
-	ring = hashring.New(coordinators)
-
 	go updateCoordinatorsList()
 
 	router := gin.Default()
+
+	router.GET("/", welcome)
 
 	router.POST("/saga", processSaga)
 	router.POST("/saga/cluster/:request", newSaga)
@@ -58,7 +56,7 @@ func main() {
 
 func updateCoordinatorsList() {
 	for {
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(pollFrequency * time.Millisecond)
 
 		coordinators = pullCoordinators()
 		// update ring
@@ -68,18 +66,17 @@ func updateCoordinatorsList() {
 }
 
 func pullCoordinators() []string {
-	// pull coordinators from k8s
+	// pull coordinator pods from k8s (includes pod for the current coordinator)
 	pods, err := clientset.CoreV1().Pods("yac").List(metav1.ListOptions{})
 
 	if err != nil {
 		panic(err.Error())
 	}
 
-	// TESTING...REMOVE LATER
-	for _, pod := range pods.Items {
-		fmt.Println(json.Marshal(pod))
+	addresses := make([]string, pods.Size())
+	for index, pod := range pods.Items {
+		addresses[index] = "http://" + pod.Status.PodIP + ":8080/"
 	}
 
-	// TODO: return actual vlaue
-	return nil
+	return addresses
 }

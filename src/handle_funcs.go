@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -9,6 +10,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/rs/xid"
 )
+
+func welcome(c *gin.Context) {
+	fmt.Println("recieved a welcome message...")
+	c.Status(http.StatusOK)
+}
 
 func processSaga(c *gin.Context) {
 	key := c.Request.RemoteAddr
@@ -63,7 +69,7 @@ func processSaga(c *gin.Context) {
 	} else {
 		// reply success
 		for _, server := range servers {
-			go sendDelMsg(server + "/saga/cluster/" + reqID, "", ack)
+			go sendDelMsg(server+"/saga/cluster/"+reqID, "", ack)
 		}
 
 		// wait for majority of ack
@@ -106,13 +112,13 @@ func partialRequestResponse(c *gin.Context) {
 	saga := sagas[resp.SagaId]
 	saga.Leader = c.Request.RemoteAddr
 
-	targetPartialRequest = saga.Transaction.Tiers[resp.Tier][resp.ReqId]
+	targetPartialRequest = saga.Transaction.Tiers[resp.Tier][resp.reqID]
 	if resp.IsComp {
 		targetPartialRequest.CompReq.Status = resp.Status
 	} else {
 		targetPartialRequest.PartialReq.Status = resp.Status
 	}
-	saga.Transaction.Tiers[resp.Tier][resp.ReqId] = targetPartialRequest
+	saga.Transaction.Tiers[resp.Tier][resp.ReqID] = targetPartialRequest
 
 	sagasMutex.Lock()
 	sagas[resp.SagaId] = saga
