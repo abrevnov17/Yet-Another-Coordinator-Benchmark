@@ -112,7 +112,7 @@ func partialRequestResponse(c *gin.Context) {
 	saga := sagas[resp.SagaId]
 	saga.Leader = c.Request.RemoteAddr
 
-	targetPartialRequest = saga.Transaction.Tiers[resp.Tier][resp.reqID]
+	targetPartialRequest = saga.Transaction.Tiers[resp.Tier][resp.ReqID]
 	if resp.IsComp {
 		targetPartialRequest.CompReq.Status = resp.Status
 	} else {
