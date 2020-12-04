@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: coordinator
+  namespace: yac
+spec:
+  selector:
+    app: coordinator
+  ports:
+    - port: 8080
+      targetPort: 8080
