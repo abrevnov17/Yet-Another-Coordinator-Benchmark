@@ -1,14 +1,19 @@
 FROM golang:1.14
 
-RUN go get -u github.com/gin-gonic/gin
-RUN go get -u github.com/gin-gonic/gin
-RUN go get -u github.com/serialx/hashring
-RUN go get -u github.com/rs/xid
+ENV GO111MODULE=on
 
-ADD run.sh run.sh
-RUN chmod +x run.sh
+RUN mkdir /yac
+WORKDIR /yac
+
+COPY go.mod .
+COPY go.sum .
+
+RUN go mod download
 
 ADD src src
+
+COPY run.sh .
+RUN chmod +x run.sh
 
 EXPOSE 8080
 ENTRYPOINT ["./run.sh"]
