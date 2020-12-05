@@ -24,7 +24,8 @@ func processSaga(c *gin.Context) {
 	}
 
 	if server != ip {
-		c.Redirect(http.StatusTemporaryRedirect, server)
+		log.Printf("%s, %s, %d\n", server, ip, len(coordinators))
+		c.Redirect(http.StatusTemporaryRedirect, server + "/saga")
 		return
 	}
 
@@ -46,39 +47,63 @@ func processSaga(c *gin.Context) {
 	}
 
 	// send request to sub cluster
+	log.Println("Informing subCluster")
 	ack := make(chan MsgStatus)
 	for _, server := range servers {
-		go sendPostMsg(server+"/saga/cluster/"+reqID, "", saga.toByteArray(), ack)
+		if server != ip {
+			go sendPostMsg(server+"/saga/cluster/"+reqID, "", saga.toByteArray(), ack)
+		}
 	}
 
 	// wait for majority of ack
-	cnt := 0
-	for cnt < len(coordinators)/2+1 {
+	cnt := 1
+	for cnt < len(servers)/2+1 {
 		if (<-ack).ok {
 			cnt++
 		}
 	}
 
 	// execute partial requests
+	log.Println("Sending partial requests")
 	rollbackTier, rollback := sendPartialRequests(reqID, servers)
 
 	if rollback == true {
 		// experiences failure, need to send compensating requests up to tier (inclusive)
+		log.Println("Rolling back", rollbackTier)
 		sendCompensatingRequests(reqID, rollbackTier, servers)
-		c.Status(http.StatusBadRequest)
-	} else {
 		// reply success
 		for _, server := range servers {
-			go sendDelMsg(server+"/saga/cluster/"+reqID, "", ack)
+			if server != ip {
+				go sendDelMsg(server+"/saga/"+reqID, "", ack)
+			}
 		}
 
 		// wait for majority of ack
-		cnt := 0
-		for cnt < len(coordinators)/2+1 {
+		cnt := 1
+		for cnt < len(servers)/2+1 {
 			if (<-ack).ok {
 				cnt++
 			}
 		}
+
+		delete(sagas, reqID)
+		c.Status(http.StatusBadRequest)
+	} else {
+		// reply success
+		for _, server := range servers {
+			if server != ip {
+				go sendDelMsg(server+"/saga/"+reqID, "", ack)
+			}
+		}
+
+		// wait for majority of ack
+		cnt := 1
+		for cnt < len(servers)/2+1 {
+			if (<-ack).ok {
+				cnt++
+			}
+		}
+		delete(sagas, reqID)
 		// TODO: return with body
 		c.Status(http.StatusOK)
 	}

@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -25,7 +27,7 @@ func main() {
 
 	ip = "http://" + os.Getenv("POD_IP") + ":8080"
 
-	fmt.Println("pod ip: " + ip)
+	log.Println("pod ip: " + ip)
 
 	// creating k8s client
 	config, err := rest.InClusterConfig()
@@ -73,10 +75,18 @@ func pullCoordinators() []string {
 		panic(err.Error())
 	}
 
-	addresses := make([]string, pods.Size())
-	for index, pod := range pods.Items {
-		addresses[index] = "http://" + pod.Status.PodIP + ":8080/"
+	//addresses := make([]string, pods.Size())
+	//for index, pod := range pods.Items {
+	//	addresses[index] = "http://" + pod.Status.PodIP + ":8080"
+	//}
+
+	addresses := make([]string, 0)
+	for _, pod := range pods.Items {
+		if pod.Status.PodIP != "" {
+			addresses = append(addresses, "http://" + pod.Status.PodIP + ":8080")
+		}
 	}
 
+	sort.Strings(addresses)
 	return addresses
 }

@@ -11,3 +11,6 @@ kubectl apply -f coordinator_deployment.yaml
 
 # create service
 kubectl apply -f coordinator_service.yaml
+
+# restore namespace
+kubectl config set-context --current --namespace=default

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"log"
 	"net/http"
 	"sort"
 )
@@ -13,20 +14,21 @@ type MsgStatus struct {
 }
 
 func sendPostMsg(url, reqID string, body []byte, ack chan MsgStatus) {
-	resp, err := http.Post("http://"+url, "application/json", bytes.NewBuffer(body))
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(body))
 	ok := err == nil && resp.StatusCode >= 200 && resp.StatusCode <= 299
 	ack <- MsgStatus{ok: ok, reqID: reqID}
 }
 
 func sendGetMsg(url, reqID string, ack chan MsgStatus) {
-	resp, err := http.Get("http://" + url)
+	resp, err := http.Get(url)
 	ok := err == nil && resp.StatusCode >= 200 && resp.StatusCode <= 299
+	log.Println("GET", url, err)
 	ack <- MsgStatus{ok: ok, reqID: reqID}
 }
 
 func sendPutMsg(url, reqID string, body []byte, ack chan MsgStatus) {
 	client := &http.Client{}
-	req, err := http.NewRequest("PUT", "http://"+url, bytes.NewBuffer(body))
+	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(body))
 	if err != nil {
 		ack <- MsgStatus{ok: false, reqID: reqID}
 		return
@@ -39,7 +41,7 @@ func sendPutMsg(url, reqID string, body []byte, ack chan MsgStatus) {
 
 func sendDelMsg(url, reqID string, ack chan MsgStatus) {
 	client := &http.Client{}
-	req, err := http.NewRequest("DELETE", "http://"+url, nil)
+	req, err := http.NewRequest("DELETE", url, nil)
 	if err != nil {
 		ack <- MsgStatus{ok: false, reqID: reqID}
 		return
@@ -128,7 +130,7 @@ func sendCompensatingRequests(sagaId string, maxTier int, subCluster []string) {
 	for _, tier := range tiers {
 		// we have rolled back all the requests necessary
 
-		if tier >= maxTier {
+		if tier > maxTier {
 			return
 		}
 		requestsMap := tiersMap[tier]
@@ -164,10 +166,12 @@ func updateSubCluster(sagaId string, tier int, reqID string, isComp bool, status
 
 	ack := make(chan MsgStatus)
 	for _, server := range subCluster {
-		go sendPutMsg(server+"/saga/partial", "", body, ack)
+		if server != ip {
+			go sendPutMsg(server+"/saga/partial", "", body, ack)
+		}
 	}
 
-	cnt := 0
+	cnt := 1
 	for cnt < len(subCluster)/2+1 {
 		if (<-ack).ok {
 			cnt++
