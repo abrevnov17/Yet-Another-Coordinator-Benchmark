@@ -49,6 +49,7 @@ func main() {
 	router.POST("/saga", processSaga)
 	router.POST("/saga/cluster/:request", newSaga)
 	router.PUT("/saga/partial", partialRequestResponse)
+	router.PUT("/saga/elect/:request", voteAbort)
 	router.DELETE("/saga/:request", delSaga)
 
 	if err := router.Run(":8080"); err != nil {

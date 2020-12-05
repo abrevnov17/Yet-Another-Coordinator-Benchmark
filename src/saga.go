@@ -88,7 +88,7 @@ func getSagaFromReq(req *http.Request, leader string) (Saga, error) {
 
 	// construct Saga
 	return Saga{
-		Client:      req.RemoteAddr,
+		Client:      getIpFromAddr(req.RemoteAddr),
 		Leader:      leader,
 		Transaction: transaction,
 		Status:      Initialized,

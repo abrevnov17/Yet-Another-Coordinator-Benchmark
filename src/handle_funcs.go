@@ -17,14 +17,15 @@ func welcome(c *gin.Context) {
 }
 
 func processSaga(c *gin.Context) {
-	key := c.Request.RemoteAddr
+	key := getIpFromAddr(c.Request.RemoteAddr)
 	server, ok := ring.GetNode(key)
 	if ok == false {
 		log.Fatal("Insufficient Correct Nodes")
 	}
 
 	if server != ip {
-		log.Printf("%s, %s, %d\n", server, ip, len(coordinators))
+		log.Printf("%s, %s, %s, %d\n", key, ip, server, len(coordinators))
+		log.Println(coordinators)
 		c.Redirect(http.StatusTemporaryRedirect, server + "/saga")
 		return
 	}
@@ -135,7 +136,7 @@ func partialRequestResponse(c *gin.Context) {
 	}
 
 	saga := sagas[resp.SagaId]
-	saga.Leader = c.Request.RemoteAddr
+	saga.Leader = getIpFromAddr(c.Request.RemoteAddr)
 
 	targetPartialRequest = saga.Transaction.Tiers[resp.Tier][resp.ReqID]
 	if resp.IsComp {
@@ -156,4 +157,17 @@ func delSaga(c *gin.Context) {
 	reqID := c.Param("request")
 	delete(sagas, reqID)
 	c.Status(http.StatusOK)
+}
+
+func voteAbort(c *gin.Context) {
+	reqID := c.Param("request")
+	if _, isIn := sagas[reqID]; isIn {
+		leader, _ := ring.GetNode(sagas[reqID].Client)
+		if leader == getIpFromAddr(c.Request.RemoteAddr) {
+			c.Status(http.StatusOK)
+			return
+		}
+	}
+
+	c.Status(http.StatusBadRequest)
 }

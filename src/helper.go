@@ -6,11 +6,18 @@ import (
 	"log"
 	"net/http"
 	"sort"
+	"strings"
+	"time"
 )
 
 type MsgStatus struct {
 	ok    bool
 	reqID string
+}
+
+func getIpFromAddr(remoteAddr string) string {
+	addrs := strings.Split(remoteAddr, ":")
+	return addrs[0]
 }
 
 func sendPostMsg(url, reqID string, body []byte, ack chan MsgStatus) {
@@ -172,7 +179,7 @@ func updateSubCluster(sagaId string, tier int, reqID string, isComp bool, status
 	}
 
 	cnt := 1
-	for cnt < len(subCluster)/2+1 {
+	for cnt < subClusterSize/2+1 {
 		if (<-ack).ok {
 			cnt++
 		}
@@ -199,9 +206,11 @@ func checkIfNewLeader() {
 
 	for id, s := range sagas {
 		if _, isIn := coordinatorSet[s.Leader]; !isIn {
-			newLeader, _ := ring.GetNode(id)
+			newLeader, _ := ring.GetNode(s.Client)
 			s.Leader = newLeader
+			sagasMutex.Lock()
 			sagas[id] = s
+			sagasMutex.Unlock()
 			if newLeader == ip {
 				leadCompensation(s.Client, id)
 			}
@@ -211,21 +220,47 @@ func checkIfNewLeader() {
 
 func leadCompensation(key, sagaId string) {
 	subCluster, _ := ring.GetNodes(key, subClusterSize)
-	tiersMap := sagas[sagaId].Transaction.Tiers
 
-	maxTier := -1
-	for n := range tiersMap {
-		if n > maxTier {
-			for reqID := range tiersMap[n] {
-				if tiersMap[n][reqID].PartialReq.Status != Aborted && tiersMap[n][reqID].CompReq.Status != Success {
-					maxTier = n
-					break
-				}
+	resp := make(chan MsgStatus)
+	for _, svr := range subCluster {
+		go sendGetMsg(svr + "/saga/elect/" + sagaId, "", resp)
+	}
+
+	ack := 1
+	dec := 0
+	for ack < subClusterSize/2+1 && dec < subClusterSize/2+1 {
+		select {
+		case status := <-resp:
+			if status.ok {
+				ack++
+			} else {
+				dec++
 			}
+		case <-time.After(pollFrequency/2 * time.Millisecond):
+			log.Println("Timeout")
+			break
 		}
 	}
 
-	if maxTier > 0 {
-		sendCompensatingRequests(sagaId, maxTier, subCluster)
+	if ack < subClusterSize/2+1 {
+		return
+	} else {
+		tiersMap := sagas[sagaId].Transaction.Tiers
+
+		maxTier := -1
+		for n := range tiersMap {
+			if n > maxTier {
+				for reqID := range tiersMap[n] {
+					if tiersMap[n][reqID].PartialReq.Status != Aborted && tiersMap[n][reqID].CompReq.Status != Success {
+						maxTier = n
+						break
+					}
+				}
+			}
+		}
+
+		if maxTier >= 0 {
+			sendCompensatingRequests(sagaId, maxTier, subCluster)
+		}
 	}
 }
