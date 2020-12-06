@@ -2,11 +2,12 @@ package main
 
 import (
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"github.com/go-zookeeper/zk"
 	"log"
 	"os"
 	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/go-zookeeper/zk"
 )
 
 var ip string
@@ -18,7 +19,9 @@ func main() {
 	ip = os.Getenv("POD_IP") + ":8080"
 	log.Println("pod ip: " + ip)
 
-	conn, _, err := zk.Connect([]string{"zookeeper"}, time.Second)
+	conn, _, err := zk.Connect([]string{"zk-0.zk-hs.default.svc.cluster.local",
+		"zk-1.zk-hs.default.svc.cluster.local",
+		"zk-2.zk-hs.default.svc.cluster.local"}, time.Second)
 	if err != nil {
 		panic(err)
 	}
