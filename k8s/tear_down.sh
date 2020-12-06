@@ -11,3 +11,6 @@ kubectl delete service coordinator
 
 # deleting namespace
 kubectl delete namespaces yac
+
+# restore namespace
+kubectl config set-context --current --namespace=default
