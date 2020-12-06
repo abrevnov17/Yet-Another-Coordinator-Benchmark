@@ -1,5 +1,5 @@
 #!/bin/sh
 
 # Rebuilds docker image
-docker build -t abrevnov/yac:latest .
-docker push abrevnov/yac:latest
+docker build -t abrevnov/yac-baseline:latest .
+docker push abrevnov/yac-baseline:latest
