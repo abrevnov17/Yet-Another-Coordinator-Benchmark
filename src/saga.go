@@ -3,11 +3,8 @@ package main
 import (
 	"encoding/json"
 	"net/http"
-	"sync"
+	"time"
 )
-
-var sagas = make(map[string]Saga)
-var sagasMutex = sync.Mutex{}
 
 type Status int
 
@@ -27,8 +24,8 @@ type Request struct {
 }
 
 type Saga struct {
-	Client      string
 	Leader      string
+	Timestamp   time.Time
 	Transaction Transaction
 	Status      Status
 }
@@ -40,14 +37,6 @@ type TransactionReq struct {
 
 type Transaction struct {
 	Tiers map[int]map[string]TransactionReq `json:"tier"`
-}
-
-type PartialResponse struct {
-	SagaId string
-	Tier   int
-	ReqID  string
-	IsComp bool // true -> compensate req, false -> partial req
-	Status Status
 }
 
 /*
@@ -88,8 +77,8 @@ func getSagaFromReq(req *http.Request, leader string) (Saga, error) {
 
 	// construct Saga
 	return Saga{
-		Client:      getIpFromAddr(req.RemoteAddr),
 		Leader:      leader,
+		Timestamp:	 time.Now(),
 		Transaction: transaction,
 		Status:      Initialized,
 	}, nil
