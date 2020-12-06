@@ -6,18 +6,12 @@ import (
 	"log"
 	"net/http"
 	"sort"
-	"strings"
 	"time"
 )
 
 type MsgStatus struct {
 	ok    bool
 	reqID string
-}
-
-func getIpFromAddr(remoteAddr string) string {
-	addrs := strings.Split(remoteAddr, ":")
-	return addrs[0]
 }
 
 func sendPostMsg(url, reqID string, body []byte, ack chan MsgStatus) {
@@ -215,7 +209,5 @@ func checkIfNewLeader() {
 			}
 			_ = conn.Delete("/" + sagaId, 0)
 		}
-
 	}
-
 }

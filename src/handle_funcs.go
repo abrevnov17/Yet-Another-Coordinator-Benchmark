@@ -2,16 +2,15 @@ package main
 
 import (
 	"fmt"
+	"github.com/gin-gonic/gin"
+	"github.com/go-zookeeper/zk"
+	"github.com/rs/xid"
 	"log"
 	"net/http"
-
-	"github.com/gin-gonic/gin"
-	"github.com/rs/xid"
-	"github.com/go-zookeeper/zk"
 )
 
 func welcome(c *gin.Context) {
-	fmt.Println("recieved a welcome message...")
+	fmt.Println("received a welcome message...")
 	c.Status(http.StatusOK)
 }
 
