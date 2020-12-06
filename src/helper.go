@@ -6,17 +6,12 @@ import (
 	"log"
 	"net/http"
 	"sort"
-	"strings"
+	"time"
 )
 
 type MsgStatus struct {
 	ok    bool
 	reqID string
-}
-
-func getIpFromAddr(remoteAddr string) string {
-	addrs := strings.Split(remoteAddr, ":")
-	return addrs[0]
 }
 
 func sendPostMsg(url, reqID string, body []byte, ack chan MsgStatus) {
@@ -109,6 +104,7 @@ func sendPartialRequests(sagaId string, saga *Saga) (int, bool) {
 				request := tiersMap[tier][status.reqID]
 				request.PartialReq.Status = Success
 				saga.Transaction.Tiers[tier][status.reqID] = request
+				saga.Timestamp = time.Now()
 				_, _ = conn.Set("/" + sagaId, saga.toByteArray(), 0)
 				cnt++
 			} else {
@@ -116,6 +112,7 @@ func sendPartialRequests(sagaId string, saga *Saga) (int, bool) {
 				request := tiersMap[tier][status.reqID]
 				request.PartialReq.Status = Failed
 				saga.Transaction.Tiers[tier][status.reqID] = request
+				saga.Timestamp = time.Now()
 				_, _ = conn.Set("/" + sagaId, saga.toByteArray(), 0)
 				return tier, true
 			}
@@ -161,6 +158,7 @@ func sendCompensatingRequests(sagaId string, maxTier int, saga *Saga) {
 				request.PartialReq.Status = Aborted
 				request.CompReq.Status = Success
 				saga.Transaction.Tiers[tier][status.reqID] = request
+				saga.Timestamp = time.Now()
 				_, _ = conn.Set("/" + sagaId, saga.toByteArray(), 0)
 				cnt++
 			}
@@ -170,5 +168,46 @@ func sendCompensatingRequests(sagaId string, maxTier int, saga *Saga) {
 
 
 func checkIfNewLeader() {
-	// TODO: get all requests
+	for {
+		time.Sleep(pollFrequency * time.Millisecond)
+		sagaIds, _, err := conn.Children("/")
+		if err != nil {
+			log.Printf("[Error] %s\n", err)
+			continue
+		}
+
+		for _, sagaId := range sagaIds {
+			byteBuf, _, err := conn.Get("/" + sagaId)
+			if err != nil {
+				continue
+			}
+			saga := fromByteArray(byteBuf)
+			if time.Now().Sub(saga.Timestamp) < timeout * time.Millisecond {
+				continue
+			}
+
+			saga.Leader = ip
+			saga.Timestamp = time.Now()
+			if _, err := conn.Set("/" + sagaId, saga.toByteArray(), 0); err != nil {
+				continue
+			}
+
+			maxTier := -1
+			for n := range saga.Transaction.Tiers {
+				if n > maxTier {
+					for reqID := range saga.Transaction.Tiers[n] {
+						if saga.Transaction.Tiers[n][reqID].PartialReq.Status != Aborted && saga.Transaction.Tiers[n][reqID].CompReq.Status != Success {
+							maxTier = n
+							break
+						}
+					}
+				}
+			}
+
+			if maxTier >= 0 {
+				sendCompensatingRequests(sagaId, maxTier, &saga)
+			}
+			_ = conn.Delete("/" + sagaId, 0)
+		}
+	}
 }
