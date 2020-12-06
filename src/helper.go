@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"sort"
 	"strings"
-	"time"
 )
 
 type MsgStatus struct {
@@ -81,8 +80,8 @@ func sendMessage(reqID string, req Request, resp chan MsgStatus) {
 }
 
 // Returns tier that needs to be rolled back to, nil on success
-func sendPartialRequests(sagaId string, subCluster []string) (int, bool) {
-	tiersMap := sagas[sagaId].Transaction.Tiers
+func sendPartialRequests(sagaId string, saga *Saga) (int, bool) {
+	tiersMap := saga.Transaction.Tiers
 
 	// since maps do not guarantee order, we get keys and sort them
 	tiers := make([]int, 0, len(tiersMap))
@@ -103,16 +102,21 @@ func sendPartialRequests(sagaId string, subCluster []string) (int, bool) {
 		}
 
 		// wait for successes from each partial request, quit on failure
-		// TODO: add retries / timeouts
 		cnt := 0
 		for cnt < len(requestsMap) {
 			status := <-success
 			if status.ok {
-				updateSubCluster(sagaId, tier, status.reqID, false, Success, subCluster)
+				request := tiersMap[tier][status.reqID]
+				request.PartialReq.Status = Success
+				saga.Transaction.Tiers[tier][status.reqID] = request
+				_, _ = conn.Set("/" + sagaId, saga.toByteArray(), 0)
 				cnt++
 			} else {
 				// failure at this tier, need to roll back
-				updateSubCluster(sagaId, tier, status.reqID, false, Failed, subCluster)
+				request := tiersMap[tier][status.reqID]
+				request.PartialReq.Status = Failed
+				saga.Transaction.Tiers[tier][status.reqID] = request
+				_, _ = conn.Set("/" + sagaId, saga.toByteArray(), 0)
 				return tier, true
 			}
 		}
@@ -122,8 +126,8 @@ func sendPartialRequests(sagaId string, subCluster []string) (int, bool) {
 }
 
 // Tier is highest tier through which (inclusive) we need to roll back
-func sendCompensatingRequests(sagaId string, maxTier int, subCluster []string) {
-	tiersMap := sagas[sagaId].Transaction.Tiers
+func sendCompensatingRequests(sagaId string, maxTier int, saga *Saga) {
+	tiersMap := saga.Transaction.Tiers
 
 	// since maps do not guarantee order, we get keys and sort them
 	tiers := make([]int, 0, len(tiersMap))
@@ -149,118 +153,22 @@ func sendCompensatingRequests(sagaId string, maxTier int, subCluster []string) {
 		}
 
 		// wait for successes from each partial request, quit on failure
-		// TODO: add retries / timeouts
 		cnt := 0
 		for cnt < len(requestsMap) {
 			status := <-success
 			if status.ok {
-				updateSubCluster(sagaId, tier, status.reqID, true, Success, subCluster)
+				request := tiersMap[tier][status.reqID]
+				request.PartialReq.Status = Aborted
+				request.CompReq.Status = Success
+				saga.Transaction.Tiers[tier][status.reqID] = request
+				_, _ = conn.Set("/" + sagaId, saga.toByteArray(), 0)
 				cnt++
 			}
-			// TODO: handle unsuccessful compensation
 		}
 	}
 }
 
-func updateSubCluster(sagaId string, tier int, reqID string, isComp bool, status Status, subCluster []string) {
-	body, _ := json.Marshal(PartialResponse{
-		SagaId: sagaId,
-		Tier:   tier,
-		ReqID:  reqID,
-		IsComp: isComp,
-		Status: status,
-	})
-
-	ack := make(chan MsgStatus)
-	for _, server := range subCluster {
-		if server != ip {
-			go sendPutMsg(server+"/saga/partial", "", body, ack)
-		}
-	}
-
-	cnt := 1
-	for cnt < subClusterSize/2+1 {
-		if (<-ack).ok {
-			cnt++
-		}
-	}
-
-	request := sagas[sagaId].Transaction.Tiers[tier][reqID]
-	if isComp {
-		request.CompReq.Status = Success
-		request.PartialReq.Status = Aborted
-	} else {
-		request.PartialReq.Status = Success
-	}
-
-	sagasMutex.Lock()
-	sagas[sagaId].Transaction.Tiers[tier][reqID] = request
-	sagasMutex.Unlock()
-}
 
 func checkIfNewLeader() {
-	coordinatorSet := make(map[string]bool, len(coordinators))
-	for _, c := range coordinators {
-		coordinatorSet[c] = true
-	}
-
-	for id, s := range sagas {
-		if _, isIn := coordinatorSet[s.Leader]; !isIn {
-			newLeader, _ := ring.GetNode(s.Client)
-			s.Leader = newLeader
-			sagasMutex.Lock()
-			sagas[id] = s
-			sagasMutex.Unlock()
-			if newLeader == ip {
-				leadCompensation(s.Client, id)
-			}
-		}
-	}
-}
-
-func leadCompensation(key, sagaId string) {
-	subCluster, _ := ring.GetNodes(key, subClusterSize)
-
-	resp := make(chan MsgStatus)
-	for _, svr := range subCluster {
-		go sendGetMsg(svr + "/saga/elect/" + sagaId, "", resp)
-	}
-
-	ack := 1
-	dec := 0
-	for ack < subClusterSize/2+1 && dec < subClusterSize/2+1 {
-		select {
-		case status := <-resp:
-			if status.ok {
-				ack++
-			} else {
-				dec++
-			}
-		case <-time.After(pollFrequency/2 * time.Millisecond):
-			log.Println("Timeout")
-			break
-		}
-	}
-
-	if ack < subClusterSize/2+1 {
-		return
-	} else {
-		tiersMap := sagas[sagaId].Transaction.Tiers
-
-		maxTier := -1
-		for n := range tiersMap {
-			if n > maxTier {
-				for reqID := range tiersMap[n] {
-					if tiersMap[n][reqID].PartialReq.Status != Aborted && tiersMap[n][reqID].CompReq.Status != Success {
-						maxTier = n
-						break
-					}
-				}
-			}
-		}
-
-		if maxTier >= 0 {
-			sendCompensatingRequests(sagaId, maxTier, subCluster)
-		}
-	}
+	// TODO: get all requests
 }
