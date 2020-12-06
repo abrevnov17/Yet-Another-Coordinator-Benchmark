@@ -19,13 +19,9 @@ func main() {
 	ip = os.Getenv("POD_IP") + ":8080"
 	log.Println("pod ip: " + ip)
 
-	conn, _, err := zk.Connect([]string{"zk-0.zk-hs.default.svc.cluster.local",
+	conn, _, _ = zk.Connect([]string{"zk-0.zk-hs.default.svc.cluster.local",
 		"zk-1.zk-hs.default.svc.cluster.local",
 		"zk-2.zk-hs.default.svc.cluster.local"}, time.Second)
-	if err != nil {
-		panic(err)
-	}
-	defer conn.Close()
 
 	router := gin.Default()
 

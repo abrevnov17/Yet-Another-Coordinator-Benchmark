@@ -2,11 +2,12 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	"github.com/go-zookeeper/zk"
 	"github.com/rs/xid"
-	"log"
-	"net/http"
 )
 
 func welcome(c *gin.Context) {
@@ -22,7 +23,7 @@ func processSaga(c *gin.Context) {
 	}
 
 	reqID := xid.New().String()
-	if _, err := conn.Create("/" + reqID, saga.toByteArray(), 0, zk.WorldACL(zk.PermAll)); err != nil {
+	if _, err := conn.Create("/"+reqID, saga.toByteArray(), 0, zk.WorldACL(zk.PermAll)); err != nil {
 		log.Println(err)
 		c.Status(http.StatusInternalServerError)
 		return
@@ -34,10 +35,10 @@ func processSaga(c *gin.Context) {
 
 	if rollback == true {
 		sendCompensatingRequests(reqID, rollbackTier, &saga)
-		_ = conn.Delete("/" + reqID, 0)
+		_ = conn.Delete("/"+reqID, 0)
 		c.Status(http.StatusBadRequest)
 	} else {
-		_ = conn.Delete("/" + reqID, 0)
+		_ = conn.Delete("/"+reqID, 0)
 		c.Status(http.StatusOK)
 	}
 }
