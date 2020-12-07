@@ -10,7 +10,7 @@ import (
 )
 
 var ip string
-var conn *zk.Conn
+var conn, _, _ = zk.Connect([]string{"zookeeper"}, time.Second)
 
 func main() {
 	fmt.Println("starting up coordinator...")
@@ -18,16 +18,14 @@ func main() {
 	ip = os.Getenv("POD_IP") + ":8080"
 	log.Println("pod ip: " + ip)
 
-	conn, _, err := zk.Connect([]string{"zookeeper"}, time.Second)
-	if err != nil {
-		panic(err)
-	}
-	defer conn.Close()
+	conn, _, _ = zk.Connect([]string{"zookeeper"}, time.Second)
+
+	//defer conn.Close()
 
 	router := gin.Default()
 
 	router.GET("/", welcome)
-	router.POST("/saga", processSaga)
+	router.POST("/saga/:request", processSaga)
 
 	if err := router.Run(":8080"); err != nil {
 		panic(err)

@@ -97,8 +97,7 @@ func sendPartialRequests(sagaId string, saga *Saga) (int, bool) {
 		}
 
 		// wait for successes from each partial request, quit on failure
-		cnt := 0
-		for cnt < len(requestsMap) {
+		for cnt := 0; cnt < len(requestsMap); cnt++ {
 			status := <-success
 			if status.ok {
 				request := tiersMap[tier][status.reqID]
@@ -106,7 +105,6 @@ func sendPartialRequests(sagaId string, saga *Saga) (int, bool) {
 				saga.Transaction.Tiers[tier][status.reqID] = request
 				saga.Timestamp = time.Now()
 				_, _ = conn.Set("/" + sagaId, saga.toByteArray(), 0)
-				cnt++
 			} else {
 				// failure at this tier, need to roll back
 				request := tiersMap[tier][status.reqID]
@@ -150,8 +148,7 @@ func sendCompensatingRequests(sagaId string, maxTier int, saga *Saga) {
 		}
 
 		// wait for successes from each partial request, quit on failure
-		cnt := 0
-		for cnt < len(requestsMap) {
+		for cnt := 0; cnt < len(requestsMap); cnt++ {
 			status := <-success
 			if status.ok {
 				request := tiersMap[tier][status.reqID]
@@ -160,7 +157,8 @@ func sendCompensatingRequests(sagaId string, maxTier int, saga *Saga) {
 				saga.Transaction.Tiers[tier][status.reqID] = request
 				saga.Timestamp = time.Now()
 				_, _ = conn.Set("/" + sagaId, saga.toByteArray(), 0)
-				cnt++
+			} else {
+				go sendMessage(status.reqID, requestsMap[status.reqID].CompReq, success)
 			}
 		}
 	}
