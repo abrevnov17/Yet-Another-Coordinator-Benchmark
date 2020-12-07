@@ -21,7 +21,8 @@ func main() {
 
 	conn, _, _ = zk.Connect([]string{"zk-0.zk-hs.default.svc.cluster.local",
 		"zk-1.zk-hs.default.svc.cluster.local",
-		"zk-2.zk-hs.default.svc.cluster.local"}, time.Second)
+		"zk-2.zk-hs.default.svc.cluster.local", "zk-3.zk-hs.default.svc.cluster.local",
+		"zk-4.zk-hs.default.svc.cluster.local"}, time.Second)
 
 	router := gin.Default()
 
