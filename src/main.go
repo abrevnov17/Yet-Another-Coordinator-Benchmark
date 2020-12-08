@@ -9,16 +9,29 @@ import (
 	"time"
 )
 
+var zkEndpoints = []string {
+	"zk-0.zk-hs.default.svc.cluster.local",
+	"zk-1.zk-hs.default.svc.cluster.local",
+	"zk-2.zk-hs.default.svc.cluster.local",
+	"zk-3.zk-hs.default.svc.cluster.local",
+	"zk-4.zk-hs.default.svc.cluster.local",
+}
+
 var ip string
-var conn, _, _ = zk.Connect([]string{"zookeeper"}, time.Second)
+var conn *zk.Conn
 
 func main() {
+	var err error
+
 	fmt.Println("starting up coordinator...")
 
 	ip = os.Getenv("POD_IP") + ":8080"
 	log.Println("pod ip: " + ip)
 
-	conn, _, _ = zk.Connect([]string{"zookeeper"}, time.Second)
+	conn, _, err = zk.Connect(zkEndpoints, time.Second)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	//defer conn.Close()
 
