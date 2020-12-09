@@ -2,11 +2,12 @@ package main
 
 import (
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"github.com/go-zookeeper/zk"
 	"log"
 	"os"
 	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/go-zookeeper/zk"
 )
 
 var zkEndpoints = []string {
@@ -27,7 +28,7 @@ func main() {
 
 	ip = os.Getenv("POD_IP") + ":8080"
 	log.Println("pod ip: " + ip)
-
+	
 	conn, _, err = zk.Connect(zkEndpoints, time.Second)
 	if err != nil {
 		log.Fatal(err)

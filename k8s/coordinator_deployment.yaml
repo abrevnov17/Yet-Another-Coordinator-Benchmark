@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: coordinator
-  namespace: yac
+  namespace: yac-baseline
   labels:
     app: coordinator
 spec:
@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: coordinator
-        image: abrevnov/yac
+        image: abrevnov/yac-baseline
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
