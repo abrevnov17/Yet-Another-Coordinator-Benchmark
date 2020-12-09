@@ -2,12 +2,10 @@ package main
 
 import (
 	"fmt"
-	"log"
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 	"github.com/go-zookeeper/zk"
-	"github.com/rs/xid"
+	"log"
+	"net/http"
 )
 
 func welcome(c *gin.Context) {
@@ -16,14 +14,14 @@ func welcome(c *gin.Context) {
 }
 
 func processSaga(c *gin.Context) {
+	sagaId := c.Param("request")
 	saga, err := getSagaFromReq(c.Request, ip)
 	if err != nil {
 		c.Status(http.StatusBadRequest)
 		return
 	}
 
-	reqID := xid.New().String()
-	if _, err := conn.Create("/"+reqID, saga.toByteArray(), 0, zk.WorldACL(zk.PermAll)); err != nil {
+	if _, err := conn.Create("/" + sagaId, saga.toByteArray(), int32(0), zk.WorldACL(zk.PermAll)); err != nil {
 		log.Println(err)
 		c.Status(http.StatusInternalServerError)
 		return
@@ -31,14 +29,17 @@ func processSaga(c *gin.Context) {
 
 	// execute partial requests
 	log.Println("Sending partial requests")
-	rollbackTier, rollback := sendPartialRequests(reqID, &saga)
+	rollbackTier, rollback := sendPartialRequests(sagaId, &saga)
 
 	if rollback == true {
-		sendCompensatingRequests(reqID, rollbackTier, &saga)
-		_ = conn.Delete("/"+reqID, 0)
+		log.Println("Sending compensation requests")
+		sendCompensatingRequests(sagaId, rollbackTier, &saga)
+		log.Println("Deleting saga")
+		_ = conn.Delete("/" + sagaId, 0)
 		c.Status(http.StatusBadRequest)
 	} else {
-		_ = conn.Delete("/"+reqID, 0)
+		log.Println("Deleting saga")
+		_ = conn.Delete("/" + sagaId, 0)
 		c.Status(http.StatusOK)
 	}
 }
