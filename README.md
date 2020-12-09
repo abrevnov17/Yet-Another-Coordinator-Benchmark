@@ -1,2 +1,2 @@
-# Yet-Another-Coordinator
-Final project for CS2952-F at Brown University
+# Yet-Another-Coordinator-Benchmark
+Baseline implementation for final project of CS2952-F at Brown University
